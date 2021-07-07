@@ -14,6 +14,8 @@ void test_speedJ(RTDEControlInterface *rtde_control,
                  RTDEReceiveInterface *rtde_receive,
                  std::vector<double> joint_q, double dt, double acceleration,
                  double k, int j_move_count);
+std::vector<double> calc_speed(RTDEReceiveInterface *rtde_receive, double dt,
+                               std::vector<double> qdd);
 
 int main(int argc, char *argv[]) {
   // Parameters
@@ -23,19 +25,21 @@ int main(int argc, char *argv[]) {
   RTDEReceiveInterface rtde_receive("127.0.0.1");
   std::vector<double> joint_q = {-1.54, -1.83, -2.28, -0.59, 1.60, 0.023};
 
-  for (int i = 0; i < 3; i++)
-    for (int j = 1; j < 3; j++)
-      test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
-                  acceleration * (j + 1), 0.001, 1);
-  for (int i = 0; i < 3; i++)
-    for (int j = 1; j < 3; j++)
-      test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
-                  acceleration * (j + 1), 0.001, 2);
+  // for (int i = 0; i < 3; i++)
+  //   for (int j = 1; j < 3; j++)
+  //     test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
+  //                 acceleration * (j + 1), 0.001, 1);
+  // for (int i = 0; i < 3; i++)
+  //   for (int j = 1; j < 3; j++)
+  //     test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
+  //                 acceleration * (j + 1), 0.001, 2);
 
-  for (int i = 0; i < 3; i++)
-    for (int j = 1; j < 3; j++)
-      test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
-                  acceleration * (j + 1), 0.002, 1);
+  // for (int i = 0; i < 3; i++)
+  //   for (int j = 1; j < 3; j++)
+  //     test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * (i + 1),
+  //                 acceleration * (j + 1), 0.002, 1);
+   test_speedJ(&rtde_control, &rtde_receive, joint_q, dt * 2,
+                   acceleration, 0.1, 1);
 
   rtde_control.stopScript();
   return 0;
@@ -66,7 +70,8 @@ void test_speedJ(RTDEControlInterface *rtde_control,
 
   for (unsigned int i = 0; i < 25; i++) {
     auto t_start = high_resolution_clock::now();
-    rtde_control->speedJ(joint_speed, acceleration, dt);
+    joint_speed =  calc_speed(rtde_receive, dt, {0, 0 , (i + 1) * k, 0, 0, 0}) ;
+    rtde_control->speedJ(joint_speed, (i + 1) * k);
 
     timestamp.push_back(
         std::chrono::duration<double>(t_start - t_init).count());
@@ -77,7 +82,7 @@ void test_speedJ(RTDEControlInterface *rtde_control,
     theory_q.push_back(i == 0 ? joint_q[2]
                               : theory_q.back() + joint_speed[2] * dt);
 
-    joint_speed[2] += (i + 1) * k;
+    
 
     auto t_stop = high_resolution_clock::now();
     auto t_duration = std::chrono::duration<double>(t_stop - t_start);
@@ -90,7 +95,8 @@ void test_speedJ(RTDEControlInterface *rtde_control,
 
   for (uint i = 0; i < 25; i++) {
     auto t_start = high_resolution_clock::now();
-    rtde_control->speedJ(joint_speed, acceleration, dt);
+    joint_speed= calc_speed(rtde_receive, dt, {0.0, 0.0 , -double((i + 1) * k), 0.0, 0.0, 0.0});
+    rtde_control->speedJ(joint_speed, (i + 1) * k );
 
     timestamp.push_back(
         std::chrono::duration<double>(t_start - t_init).count());
@@ -100,7 +106,7 @@ void test_speedJ(RTDEControlInterface *rtde_control,
     actual_q.push_back(rtde_receive->getTargetQ()[2]);
     theory_q.push_back(theory_q.back() + joint_speed[2] * dt);
 
-    joint_speed[2] -= (i + 1) * k;
+    
 
     auto t_stop = high_resolution_clock::now();
     auto t_duration = std::chrono::duration<double>(t_stop - t_start);
@@ -119,12 +125,20 @@ void test_speedJ(RTDEControlInterface *rtde_control,
                "i, timestamp, command_velocity, target_velocity, "
                "actual_velocity, theory_q, actual_q, actual_qdd\n");
 
-  for (int i = 0; i < 50; i++) {
-    auto qdd = (actual_velocity[i] - (i > 0 ? actual_velocity[i - 1] : 0)) / dt;
+  for (int i = 0; i < actual_velocity.size(); i++) {
+    auto qdd  =0.0 ;
+    if(i != 0)
+    qdd = (actual_velocity[i] -  actual_velocity[i - 1] ) / (timestamp[i] -  timestamp[i-1]);
     std::fprintf(fd, "%2d, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n ", i,
                  timestamp[i], command_velocity[i], target_velocity[i],
                  actual_velocity[i], theory_q[i], actual_q[i], qdd);
   }
   std::fclose(fd);
   rtde_control->speedStop();
+}
+std::vector<double> calc_speed(RTDEReceiveInterface *rtde_receive, double dt,
+                               std::vector<double> qdd) {
+  auto res = rtde_receive->getActualQd();
+  for (size_t i = 0; i < res.size(); i++) res[i] += qdd[i] * dt;
+  return res;
 }
